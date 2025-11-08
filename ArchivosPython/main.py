@@ -13,8 +13,14 @@ plt.title("Histograma de Masa (MOCK)")
 plt.xlabel("Masa (GeV) - Simulado")
 plt.ylabel("Eventos - Simulado")
 
+script_dir = os.path.dirname(__file__)
+output_dir = os.path.abspath(os.path.join(script_dir, "..", "Front"))
+os.makedirs(output_dir, exist_ok=True)
+
 nombre_archivo = "histograma_masa.png"
-plt.savefig(nombre_archivo)
+ruta_salida = os.path.join(output_dir, nombre_archivo)
+plt.savefig(ruta_salida)
+plt.close()
 
 print(f"Gráfico guardado como: {nombre_archivo}")
 print("--- MOCK del análisis terminado ---")

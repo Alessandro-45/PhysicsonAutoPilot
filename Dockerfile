@@ -10,6 +10,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+
+COPY . .
+
+# Comando por defecto: ejecutar tu script
+CMD ["python", "ArchivosPython/main.py"]
+# ...existing code...
 # --- FIN ---
-# Ya no copiamos analisis.py ni usamos CMD.
-# Le dejamos esa responsabilidad a la GitHub Action.
