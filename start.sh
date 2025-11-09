@@ -1,48 +1,39 @@
-# ...existing code...
 #!/bin/bash
 set -euo pipefail
 
 # Ir al directorio del repo (asegura rutas relativas)
 cd "$(dirname "$0")"
 
-# Configurables
 NOTEBOOK="ArchivosPython/analysis.ipynb"
-EXECUTED_NOTEBOOK="ArchivosPython/executed.ipynb"
+JSON_OUTPUT="ArchivosPython/datos_analisis.json" # El path que server.py espera 
 FRONT_DIR="Front"
-NB_TIMEOUT=600   # segundos para la ejecución del notebook
+NB_TIMEOUT=600
 
-echo "=== START.SH: inicio ==="
+echo "=== START.SH (Modo API+JSON) ==="
 echo "Notebook: $NOTEBOOK"
-echo "Salida HTML en: $FRONT_DIR/index.html"
+echo "Salida JSON esperada en: $JSON_OUTPUT"
 
-# Preparar carpeta de salida
+# Asegurar que el Front exista (para los archivos estáticos)
 mkdir -p "$FRONT_DIR"
 
-# Ejecutar el notebook y convertir a HTML (fallar si hay errores)
+# --- PASO 1: FASE DE BUILD ---
+# Ejecutar el notebook SOLAMENTE para generar el JSON
 if [ -f "$NOTEBOOK" ]; then
   echo "Iniciando build: ejecutando notebook de análisis..."
-  python -m nbconvert --to notebook --execute "$NOTEBOOK" --output "$EXECUTED_NOTEBOOK" --ExecutePreprocessor.timeout=$NB_TIMEOUT
-  echo "Notebook ejecutado: $EXECUTED_NOTEBOOK"
-
-  echo "Convirtiendo notebook ejecutado a HTML..."
-  python -m nbconvert --to html "$EXECUTED_NOTEBOOK" --output-dir="$FRONT_DIR" --output="index.html"
-  echo "HTML generado en: $FRONT_DIR/index.html"
+  python -m nbconvert --to notebook --execute "$NOTEBOOK" --ExecutePreprocessor.timeout=$NB_TIMEOUT
+  echo "Notebook ejecutado."
 else
   echo "WARN: Notebook $NOTEBOOK no encontrado. Se salta la fase de build."
 fi
 
-# Verificar artefactos mínimos
-if [ ! -f "$FRONT_DIR/index.html" ]; then
-  echo "ERROR: Front/index.html no encontrado. Abortando startup."
-  ls -la "$FRONT_DIR" || true
+# Verificar que el notebook haya creado el JSON
+if [ ! -f "$JSON_OUTPUT" ]; then
+  echo "ERROR: $JSON_OUTPUT no fue creado por el notebook. Abortando startup."
   exit 1
 fi
-
-echo "Contenido de $FRONT_DIR:"
-ls -la "$FRONT_DIR"
+echo "JSON para API generado exitosamente."
 
 # --- PASO 2: INICIAR SERVIDOR ---
 echo "Iniciando Web Service (uvicorn)..."
-# Usamos exec para que uvicorn reciba PID 1 (mejor manejo de señales)
+# Usamos exec para que uvicorn reciba PID 1
 exec uvicorn server:app --host 0.0.0.0 --port ${PORT:-10000}
-# ...existing code...
