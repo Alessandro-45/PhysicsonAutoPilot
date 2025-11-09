@@ -1,42 +1,30 @@
-# --- Etapa 1: Builder ---
-# Instala dependencias y ejecuta el script de análisis.
-FROM python:3.10 AS builder
+# --- Etapa 1: Construcción del Frontend (Node.js) ---
+FROM node:22-alpine AS frontend-builder
+WORKDIR /app/Front
+COPY Front/package.json Front/package-lock.json ./
+RUN npm install
+COPY Front/ ./
+RUN npm run build
 
+# --- Etapa 2: Construcción del Backend (Python) ---
+FROM python:3.10 AS backend-builder
 WORKDIR /app
-# Copiar el frontend
-COPY Front/ ./Front/
-# Instalar dependencias para el análisis
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copiar el código de análisis
 COPY ArchivosPython/ ./ArchivosPython/
-
-# Ejecutar el script de análisis directamente.
-# Si este script falla, el build se detendrá y mostrará el error.
 RUN python ArchivosPython/analysis.py
 
-# --- Etapa 2: Final ---
-# Usa una imagen ligera de Python para ejecutar el servidor web.
+# --- Etapa 3: Imagen Final ---
 FROM python:3.10-slim
-
 WORKDIR /app
-
-# Instalar solo las dependencias del servidor
 RUN pip install --no-cache-dir "fastapi[all]" uvicorn
-
-# Copiar el frontend
-COPY Front/ ./Front/
-
-# Copiar el script del servidor
 COPY server.py .
-
-# Crear el directorio de datos y copiar los JSON generados desde la etapa 'builder'
 RUN mkdir -p ./ArchivosPython
-COPY --from=builder /app/*.json ./ArchivosPython/
+COPY --from=backend-builder /app/*.json ./ArchivosPython/
 
-# Exponer el puerto del servidor
+# ¡IMPORTANTE! Revisa esta línea.
+# Si el frontend crea una carpeta 'dist', cambia 'build' por 'dist'.
+COPY --from=frontend-builder /app/Front/build ./Front
+
 EXPOSE 8000
-
-# Comando para iniciar el servidor FastAPI
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

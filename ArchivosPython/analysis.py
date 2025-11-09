@@ -12,7 +12,7 @@ import re
 
 # --- Configuración del Análisis ---
 atom.set_release('2025e-13tev-beta')
-fraction = 0.2 # Usar una fracción de los datos para acelerar la ejecución
+fraction = 1 # Usar una fracción de los datos para acelerar la ejecución
 skim = "exactly4lep"
 GeV = 1.0
 
