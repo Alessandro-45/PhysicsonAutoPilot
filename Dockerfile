@@ -1,30 +1,36 @@
-# --- Etapa 1: Construcción del Frontend (Node.js) ---
-FROM node:22-alpine AS frontend-builder
-WORKDIR /app/Front
-COPY Front/package.json Front/package-lock.json ./
-RUN npm install
-COPY Front/ ./
-RUN npm run build
+# --- STAGE 1: Backend Builder ---
+# Instala dependencias y genera los archivos necesarios
+FROM python:3.10-slim as backend-builder
 
-# --- Etapa 2: Construcción del Backend (Python) ---
-FROM python:3.10 AS backend-builder
 WORKDIR /app
+
+# Instalar dependencias (incluyendo matplotlib para generar plots)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar los archivos de Python y el Frontend a esta etapa
 COPY ArchivosPython/ ./ArchivosPython/
-RUN python ArchivosPython/analysis.py
+COPY Front/ ./Front/
 
-# --- Etapa 3: Imagen Final ---
+# Ejecutar el script para generar las gráficas. Esto creará la carpeta /app/Front/plots
+RUN python ArchivosPython/script.py
+
+# --- STAGE 2: Final Image ---
+# Construye la imagen final y ligera
 FROM python:3.10-slim
-WORKDIR /app
-RUN pip install --no-cache-dir "fastapi[all]" uvicorn
-COPY server.py .
-RUN mkdir -p ./ArchivosPython
-COPY --from=backend-builder /app/*.json ./ArchivosPython/
 
-# ¡IMPORTANTE! Revisa esta línea.
-# Si el frontend crea una carpeta 'dist', cambia 'build' por 'dist'.
-COPY --from=frontend-builder /app/Front/build ./Front
+WORKDIR /app
+
+# Copiar las librerías de Python desde la etapa de construcción
+COPY --from=backend-builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+# Copiar los ejecutables (como uvicorn) desde la etapa de construcción
+COPY --from=backend-builder /usr/local/bin /usr/local/bin
+
+# Copiar el servidor y la carpeta Front MODIFICADA (que ahora contiene las gráficas)
+COPY server.py .
+COPY --from=backend-builder /app/Front ./Front
 
 EXPOSE 8000
+
+# Ejecutar el servidor
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

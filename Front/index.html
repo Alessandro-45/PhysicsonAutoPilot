@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Physics on Autopilot</title>
+    <!-- CORRECCIÓN: Cargar la librería D3.js desde un archivo local -->
+    <script src="d3.v7.min.js"></script>
+</head>
+<body>
+<header id="barra-superior">
+    <h1>Visualizador de Datos del Bosón de Higgs</h1>
+    <div class="selector-container">
+        <label for="period-select">Selecciona un Período:</label>
+        <select id="period-select"></select>
+    </div>
+</header>
+
+<!-- El div donde se renderizará la gráfica -->
+<div id="grafica"></div>
+
+<!-- Cargar tus scripts de funciones auxiliares -->
+<script src="Extraccion.js"></script>
+<script src="Interaccion.js"></script>
+
+<!-- SCRIPT PRINCIPAL: Punto de entrada de la aplicación -->
+<script>
+    // --- 1. OBTENER DATOS DE LA API ---
+    d3.json("/api/periods").then(allPeriodsData => {
+        
+        console.log("Datos recibidos de la API:", allPeriodsData);
+
+        const periodSelect = document.getElementById('period-select');
+        const periodNames = Object.keys(allPeriodsData);
+
+        // --- 2. POBLAR EL SELECTOR DE PERÍODOS ---
+        periodNames.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name.replace('_', '-');
+            periodSelect.appendChild(option);
+        });
+        
+        if (periodNames.includes('Total')) {
+            periodSelect.value = 'Total';
+        }
+
+        // --- 3. FUNCIÓN PARA GRAFICAR (VERSIÓN COMPLETA Y ÚNICA) ---
+        function plotDataForPeriod(periodName) {
+            const periodData = allPeriodsData[periodName];
+            if (!periodData) {
+                console.error("No se encontraron datos para el período:", periodName);
+                return;
+            }
+
+            d3.select("#grafica").selectAll("*").remove();
+            console.log("Graficando datos para:", periodName);
+
+            const margin = {top: 60, right: 50, bottom: 70, left: 90},
+                  width = 1200 - margin.left - margin.right,
+                  height = 600 - margin.top - margin.bottom;
+
+            const svg = d3.select("#grafica")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const backgrounds = periodData.backgrounds;
+            const backgroundKeys = backgrounds.map(b => b.label);
+            const stackGenerator = d3.stack().keys(backgroundKeys);
+            
+            const n_bins = periodData.bins.length - 1;
+            const stackedDataInput = [];
+            for (let i = 0; i < n_bins; i++) {
+                let binObject = { binIndex: i };
+                backgrounds.forEach(bg => {
+                    binObject[bg.label] = bg.counts[i];
+                });
+                stackedDataInput.push(binObject);
+            }
+            const stackedSeries = stackGenerator(stackedDataInput);
+
+            const x = d3.scaleLinear()
+                .domain([periodData.bins[0], periodData.bins[n_bins]])
+                .range([0, width]);
+
+            const yMax = d3.max([
+                d3.max(stackedSeries, d => d3.max(d, d => d[1])),
+                d3.max(periodData.data.counts, (d, i) => d + periodData.data.errors[i])
+            ]);
+
+            const y = d3.scaleLinear()
+                .domain([0, yMax * 1.2])
+                .range([height, 0]);
+
+            svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x)).style("font-size", "14px").style("color", "white");
+            svg.append("g").call(d3.axisLeft(y)).style("font-size", "14px").style("color", "white");
+
+            const color = d3.scaleOrdinal().domain(backgroundKeys).range(backgrounds.map(b => b.color));
+
+            // --- CORRECCIÓN EN LA GRAFICACIÓN DE LOS FONDOS ---
+            svg.append("g")
+                .selectAll("g")
+                // 1. Asignar cada serie de fondo (ZZ, Z+jets) a un grupo <g>
+                .data(stackedSeries)
+                .join("g")
+                    .attr("fill", d => color(d.key))
+                // 2. Para cada grupo, asignar sus segmentos a un <rect>
+                .selectAll("rect")
+                .data(d => d)
+                .join("rect")
+                    // Ahora usamos 'd.data' para acceder al objeto original del bin
+                    // y 'd[0]' y 'd[1]' para las alturas apiladas.
+                    .attr("x", d => x(periodData.bins[d.data.binIndex]))
+                    .attr("y", d => y(d[1]))
+                    .attr("height", d => y(d[0]) - y(d[1]))
+                    .attr("width", d => x(periodData.bins[d.data.binIndex + 1]) - x(periodData.bins[d.data.binIndex]));
+
+            // 6. Dibujar los puntos de datos reales con barras de error (Este código ya estaba bien)
+            const dataPoints = svg.append("g").selectAll("g").data(periodData.data.counts).enter().append("g");
+        // --- 4. EVENT LISTENER PARA EL SELECTOR ---
+        periodSelect.addEventListener('change', (event) => {
+            plotDataForPeriod(event.target.value);
+        });
+
+        // --- 5. GRAFICAR LOS DATOS INICIALES ---
+        plotDataForPeriod(periodSelect.value);
+
+    }).catch(error => {
+        console.error("Error al obtener los datos de la API:", error);
+        d3.select("#grafica").append("h2").style("color", "red").text("Error al cargar los datos del servidor.");
+    });
+</script>
+
+</body>
+</html>
