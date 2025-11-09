@@ -1,32 +1,41 @@
-# ...existing code...
-FROM python:3.10-slim
-
-ENV PYTHONUNBUFFERED=1
+# --- Etapa 1: Builder ---
+# Instala todas las dependencias y ejecuta el análisis que consume mucho tiempo.
+FROM python:3.10 AS builder
 
 WORKDIR /app
 
-# Instalar herramientas del sistema si hacen falta para compilar paquetes
-RUN apt-get update && apt-get install -y build-essential --no-install-recommends \
- && rm -rf /var/lib/apt/lists/*
+# Instalar dependencias para el análisis
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo el repo (respetando .dockerignore)
-COPY . .
+# Copiar el código de análisis
+COPY ArchivosPython/ ./ArchivosPython/
 
-# Actualizar pip y instalar dependencias:
-# - Si existe requirements.txt, usarlo (cacheable si se mantiene)
-# - Si no existe, instalar un conjunto mínimo necesario para ejecutar notebooks y el backend
-RUN python -m pip install --upgrade pip setuptools wheel && \
-    if [ -f requirements.txt ]; then \
-      pip install --no-cache-dir -r requirements.txt ; \
-    else \
-      pip install --no-cache-dir fastapi "uvicorn[standard]" jupyter nbconvert papermill matplotlib numpy pandas ; \
-    fi
+# Ejecutar el notebook para generar los archivos .json en el directorio de trabajo /app
+RUN jupyter nbconvert --to notebook --execute ArchivosPython/analysis.ipynb --output-dir . --output analysis_executed.ipynb
 
-# Asegurar start.sh ejecutable
-RUN if [ -f /start.sh ]; then chmod +x /start.sh; fi
+# --- Etapa 2: Final ---
+# Usa una imagen ligera de Python para ejecutar el servidor web.
+FROM python:3.10-slim
 
-EXPOSE 10000
+WORKDIR /app
 
-# Ejecutar el script de arranque (ejecuta notebook y levanta FastAPI/uvicorn)
-CMD ["/start.sh"]
-# ...existing code...
+# Instalar solo las dependencias necesarias para el servidor
+RUN pip install --no-cache-dir "fastapi[all]" uvicorn
+
+# Copiar el frontend
+COPY Front/ ./Front/
+
+# Copiar el script del servidor
+COPY server.py .
+
+# Crear explícitamente el directorio de datos y luego copiar los archivos.
+# Esto elimina cualquier ambigüedad.
+RUN mkdir -p ./ArchivosPython
+COPY --from=builder /app/*.json ./ArchivosPython/
+
+# Expone el puerto que usará Uvicorn
+EXPOSE 8000
+
+# Comando para iniciar el servidor FastAPI
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -6,6 +6,8 @@ numpy
 pandas
 nbconvert
 jupyter-client
-
+atlasopenmagic
+vector
+ipykernel
 fastapi
 uvicorn[standard] == 0.22.0

@@ -1,32 +1,57 @@
-name: CI - Pruebas del Web Service
+name: CI/CD para Physics on AutoPilot
 
 on:
   push:
-    branches-ignore:
-      - main
-  pull_request:
+    branches: [ main ] # Se activa con cada push a la rama principal
 
 jobs:
-  test-build-and-run:
+  build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout del repositorio
+      # 1. Descargar el código del repositorio
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: (CI) Construir la imagen Docker
-        run: docker build -t fisico-robot .
+      # 2. Configurar Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10' # Usa la versión de Python que prefieras
 
-      - name: (CI) Ejecutar pruebas unitarias (si existen)
-        # Este paso fallará si 'pytest' no encuentra pruebas, 
-        # puedes comentarlo si no tienes pruebas aún.
+      # 3. Instalar todas las dependencias del proyecto
+      - name: Install dependencies
         run: |
-          docker run --rm -v "$GITHUB_WORKSPACE":/app -w /app fisico-robot \
-          sh -c "pip install pytest && pytest -q" || echo "Pytest no se ejecutó o no hay pruebas."
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: (CI) Probar ejecución del notebook
-        # Esto simula el "build" de Render.
-        # Si el notebook falla, el CI fallará.
+      # 4. Ejecutar el notebook de análisis para generar los archivos JSON
+      #    Este es el paso más importante y puede tardar varios minutos.
+      - name: Run analysis notebook
         run: |
-          docker run --rm -v "$GITHUB_WORKSPACE":/app -w /app fisico-robot \
-          sh -c "python -m nbconvert --to notebook --execute 'ArchivosPython/analysis.ipynb' --ExecutePreprocessor.timeout=600"
+          jupyter nbconvert --to notebook --execute ArchivosPython/analysis.ipynb --output-dir ArchivosPython --output analysis_executed.ipynb
+          echo "Análisis completado. Archivos JSON generados."
+          ls -l ArchivosPython/ # Muestra los archivos generados para depuración
+
+      # 5. Iniciar sesión en el registro de contenedores de Render
+      #    Necesitas configurar los secretos 'RENDER_USERNAME' y 'RENDER_API_KEY' en tu repositorio de GitHub.
+      #    RENDER_USERNAME es tu email de Render.
+      #    RENDER_API_KEY es una 'Personal Access Token' que creas en Render.
+      - name: Log in to Render Container Registry
+        if: success()
+        run: echo "${{ secrets.RENDER_API_KEY }}" | docker login rg.fr-par.render.com -u "${{ secrets.RENDER_USERNAME }}" --password-stdin
+
+      # 6. Construir y subir la imagen de Docker a Render
+      #    El nombre de la imagen debe ser 'rg.fr-par.render.com/<tu-nombre-de-servicio>:latest'
+      #    Reemplaza '<tu-nombre-de-servicio>' con el nombre de tu Web Service en Render.
+      - name: Build and push Docker image
+        if: success()
+        run: |
+          docker build -t rg.fr-par.render.com/physicsonautopilot-web:${{ github.sha }} .
+          docker push rg.fr-par.render.com/physicsonautopilot-web:${{ github.sha }}
+
+      # 7. Desplegar en Render usando la nueva imagen
+      #    Necesitas configurar el secreto 'RENDER_DEPLOY_HOOK_URL' en GitHub.
+      #    Esta URL la obtienes en la configuración de tu servicio en Render.
+      - name: Deploy to Render
+        if: success()
+        run: curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
